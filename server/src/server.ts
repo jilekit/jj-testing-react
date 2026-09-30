@@ -7,7 +7,9 @@ if (existsSync(".env")) {
     process.loadEnvFile(".env");
 }
 
-type ActivityType = "DRONE" | "ADSB" | "OTHER";
+const ACTIVITY_TYPES = ["DRONE", "ADSB", "OTHER"] as const;
+
+type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 type Activity = {
     id: string;
@@ -42,8 +44,15 @@ type UpdateMessage = {
     activities: ActivityUpdate[];
 };
 
+type SubscribeMessage = {
+    type: "subscribe";
+
+    // Optional filter. Omitted = all activity types.
+    activityTypes?: ActivityType[];
+};
+
 type ClientMessage =
-    | { type: "subscribe" }
+    | SubscribeMessage
     | { type: "unsubscribe" };
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -91,14 +100,8 @@ function randomBetween(min: number, max: number) {
 }
 
 function randomType(): ActivityType {
-    const types: ActivityType[] = [
-        "DRONE",
-        "ADSB",
-        "OTHER",
-    ];
-
-    return types[
-        Math.floor(Math.random() * types.length)
+    return ACTIVITY_TYPES[
+        Math.floor(Math.random() * ACTIVITY_TYPES.length)
         ];
 }
 
@@ -245,16 +248,51 @@ function send(
     socket.send(JSON.stringify(message));
 }
 
+function matchesFilter(
+    activityId: string,
+    filter: ActivityFilter
+) {
+    if (!filter) {
+        return true;
+    }
+
+    const activity = activities.get(activityId);
+
+    return activity !== undefined && filter.has(activity.type);
+}
+
 function broadcast(
     message: UpdateMessage
 ) {
-    const data = JSON.stringify(message);
+    // Serialized once and shared by all unfiltered subscribers.
+    let unfilteredData: string | undefined;
 
-    for (const client of subscribers) {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(data);
+    for (const [client, filter] of subscribers) {
+        if (client.readyState !== WebSocket.OPEN) {
+            continue;
+        }
+
+        if (!filter) {
+            unfilteredData ??= JSON.stringify(message);
+            client.send(unfilteredData);
+            continue;
+        }
+
+        const updates = message.activities.filter(update =>
+            matchesFilter(update.id, filter)
+        );
+
+        if (updates.length > 0) {
+            send(client, {
+                type: "update",
+                activities: updates,
+            });
         }
     }
+}
+
+function isActivityType(value: unknown): value is ActivityType {
+    return ACTIVITY_TYPES.includes(value as ActivityType);
 }
 
 function parseClientMessage(
@@ -263,10 +301,26 @@ function parseClientMessage(
     try {
         const message = JSON.parse(data);
 
-        if (
-            message?.type === "subscribe" ||
-            message?.type === "unsubscribe"
-        ) {
+        if (message?.type === "unsubscribe") {
+            return message;
+        }
+
+        if (message?.type === "subscribe") {
+            const { activityTypes } = message;
+
+            // Filter is optional, but when present it must be
+            // a non-empty list of known types.
+            if (
+                activityTypes !== undefined &&
+                !(
+                    Array.isArray(activityTypes) &&
+                    activityTypes.length > 0 &&
+                    activityTypes.every(isActivityType)
+                )
+            ) {
+                return undefined;
+            }
+
             return message;
         }
     } catch {
@@ -276,8 +330,12 @@ function parseClientMessage(
     return undefined;
 }
 
-// Clients which asked to receive the activity stream.
-const subscribers = new Set<WebSocket>();
+// undefined = no filter, client receives all activity types.
+type ActivityFilter = Set<ActivityType> | undefined;
+
+// Clients which asked to receive the activity stream,
+// with their activity type filter.
+const subscribers = new Map<WebSocket, ActivityFilter>();
 
 initializeActivities();
 
@@ -297,31 +355,44 @@ wss.on("connection", socket => {
 
         if (!message) {
             console.warn(
-                `Ignoring unknown client message: ${raw}`
+                `Ignoring invalid client message: ${raw}`
             );
             return;
         }
 
         if (message.type === "subscribe") {
+            // A repeated subscribe replaces the previous filter.
+            const filter: ActivityFilter = message.activityTypes
+                ? new Set(message.activityTypes)
+                : undefined;
+
             // Snapshot first, so the client has the
             // full state before the first update.
             const snapshot: SnapshotMessage = {
                 type: "snapshot",
                 activities: Array.from(
                     activities.values()
+                ).filter(activity =>
+                    matchesFilter(activity.id, filter)
                 ),
             };
 
             send(socket, snapshot);
 
-            subscribers.add(socket);
+            subscribers.set(socket, filter);
+
+            console.log(
+                `Client subscribed (${
+                    filter ? [...filter].join(", ") : "all types"
+                }). Subscribers: ${subscribers.size}`
+            );
         } else {
             subscribers.delete(socket);
-        }
 
-        console.log(
-            `Client ${message.type}d. Subscribers: ${subscribers.size}`
-        );
+            console.log(
+                `Client unsubscribed. Subscribers: ${subscribers.size}`
+            );
+        }
     });
 
     socket.on("close", () => {

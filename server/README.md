@@ -15,15 +15,43 @@ Po navázání spojení server nic neposílá. Klient si stream aktivit vyžád�
 Klient posílá serveru tyto zprávy:
 
 ```ts
+type SubscribeMessage = {
+  type: "subscribe";
+  activityTypes?: ("DRONE" | "ADSB" | "OTHER")[];
+};
+
 type ClientMessage =
-  | { type: "subscribe" }
+  | SubscribeMessage
   | { type: "unsubscribe" };
 ```
 
 - `subscribe` – server odešle `snapshot` a poté průběžně posílá `update` zprávy
 - `unsubscribe` – server přestane klientovi posílat `update` zprávy
 
-Neznámé zprávy server ignoruje.
+Neznámé nebo neplatné zprávy server ignoruje.
+
+### Filtr podle typu aktivity
+
+`activityTypes` je nepovinné:
+
+- **neuvedeno** – klient dostává aktivity všech typů
+- **seznam typů** – `snapshot` i `update` zprávy obsahují pouze aktivity uvedených typů
+
+Pokud je `activityTypes` uvedeno, musí to být neprázdné pole známých typů. Jinak server celou zprávu `subscribe` ignoruje.
+
+Příklady:
+
+```json
+{ "type": "subscribe" }
+```
+
+```json
+{ "type": "subscribe", "activityTypes": ["DRONE", "ADSB"] }
+```
+
+Opakovaný `subscribe` nahradí předchozí filtr a server odešle nový `snapshot` odpovídající novému filtru.
+
+Pokud se ve filtrovaném odběru v daném okamžiku nezměnila žádná aktivita odpovídajícího typu, server klientovi žádnou `update` zprávu neposílá.
 
 ## Activity
 
@@ -148,4 +176,4 @@ znamená, že se změnila pouze hodnota `altitude`. Ostatní hodnoty aktivity z�
 2. Klient pošle `subscribe` – server odešle `snapshot` a pak posílá `update` zprávy.
 3. Klient pošle `unsubscribe` – server přestane posílat `update` zprávy.
 
-Každý další `subscribe` znovu odešle aktuální `snapshot`. Po odpojení klienta se odběr automaticky zruší.
+Každý další `subscribe` znovu odešle aktuální `snapshot` a nahradí případný filtr `activityTypes`. Po odpojení klienta se odběr automaticky zruší.
