@@ -173,6 +173,7 @@ export function Map({
         <Box
             ref={containerRef}
             sx={{
+                width: "100%",
                 height: "100%",
                 minHeight: 0,
                 bgcolor: "grey.100",

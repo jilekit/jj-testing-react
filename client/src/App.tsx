@@ -1,19 +1,14 @@
 import { useMemo, useState } from "react";
 
-import {
-    AppBar,
-    Box,
-    Button,
-    Paper,
-    Toolbar,
-    Typography,
-} from "@mui/material";
+import { Box, Button } from "@mui/material";
 
 import { ActivityDetail } from "./components/ActivityDetail";
 import { ActivityList } from "./components/ActivityList";
 import { Map } from "./components/Map";
 import { StatusBar } from "./components/StatusBar";
 import { useActivityStream } from "./hooks/useActivityStream";
+
+import "./App.css";
 
 const WS_URL = "ws://localhost:8080";
 
@@ -38,90 +33,65 @@ export default function App() {
         : undefined;
 
     return (
-        <Box
-            sx={{
-                height: "100vh",
-                display: "flex",
-                flexDirection: "column",
-            }}
-        >
-            <AppBar position="static">
-                <Toolbar>
-                    <Typography
-                        variant="h6"
-                        sx={{ flexGrow: 1 }}
-                    >
-                        Activity Monitor
-                    </Typography>
+        <div className="app">
+            <header className="header">
+                Activity Monitor
 
-                    <Button
-                        color="inherit"
-                        variant="outlined"
-                        disabled={!connected}
-                        onClick={toggleStreaming}
-                    >
-                        {streaming
-                            ? "Stop stream"
-                            : "Start stream"}
-                    </Button>
-                </Toolbar>
-            </AppBar>
-
-            <Box
-                sx={{
-                    flex: 1,
-                    display: "grid",
-                    gridTemplateColumns: "1fr 350px",
-                    minHeight: 0,
-                }}
-            >
-                <Map
-                    activities={activityList}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                />
-
-                <Box
-                    sx={{
-                        display: "grid",
-                        gridTemplateRows: "1fr 280px",
-                        minHeight: 0,
-                        borderLeft: 1,
-                        borderColor: "divider",
-                    }}
+                <Button
+                    color="inherit"
+                    variant="outlined"
+                    disabled={!connected}
+                    onClick={toggleStreaming}
+                    sx={{ ml: "auto" }}
                 >
-                    <Paper
-                        square
-                        elevation={0}
-                        sx={{ minHeight: 0 }}
-                    >
+                    {streaming
+                        ? "Stop stream"
+                        : "Start stream"}
+                </Button>
+            </header>
+
+            <main className="content">
+                <section className="map">
+                    <Map
+                        activities={activityList}
+                        selectedId={selectedId}
+                        onSelect={setSelectedId}
+                    />
+                </section>
+
+                <aside className="sidebar">
+                    <div className="sidebarHeader">
+                        Activities ({activities.size})
+                    </div>
+
+                    <div className="activityList">
                         <ActivityList
                             activities={activityList}
                             selectedId={selectedId}
                             onSelect={setSelectedId}
                         />
-                    </Paper>
+                    </div>
 
-                    <Paper
-                        square
-                        elevation={0}
+                    <Box
                         sx={{
-                            borderTop: 1,
-                            borderColor: "divider",
+                            flexShrink: 0,
+                            borderTop: "1px solid #ccc",
                         }}
                     >
                         <ActivityDetail
                             activity={selectedActivity}
                         />
-                    </Paper>
-                </Box>
-            </Box>
+                    </Box>
+                </aside>
+            </main>
 
-            <StatusBar
-                connected={connected}
-                activityCount={activities.size}
-                updatesPerSecond={updatesPerSecond}
-            />
-        </Box>
+            <footer className="status">
+                <StatusBar
+                    connected={connected}
+                    activityCount={activities.size}
+                    updatesPerSecond={updatesPerSecond}
+                />
+            </footer>
+        </div>
     );
 }
