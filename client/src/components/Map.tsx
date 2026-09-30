@@ -21,7 +21,7 @@ const INITIAL_CENTER: L.LatLngExpression = [49.2, 16.6];
 const INITIAL_ZOOM = 11;
 
 const TYPE_COLORS: Record<ActivityType, string> = {
-    DRONE: "#1976d2",
+    DRONE: "#d32f2f",
     ADSB: "#ed6c02",
     OTHER: "#9c27b0",
 };
