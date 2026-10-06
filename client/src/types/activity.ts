@@ -13,6 +13,17 @@ export type Activity = {
     updatedAt: number;
 };
 
+export type ActivityPosition = [
+    latitude: number,
+    longitude: number,
+];
+
+// Client-side only: recent positions, oldest first.
+// The last one is the current position.
+export type TrackedActivity = Activity & {
+    trail: ActivityPosition[];
+};
+
 export type ActivityUpdate = {
     id: string;
     updatedAt: number;
