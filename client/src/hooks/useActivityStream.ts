@@ -7,15 +7,30 @@ import {
 
 import type {
     Activity,
+    ActivityPosition,
     ActivityUpdate,
     ClientMessage,
     ServerMessage,
+    TrackedActivity,
 } from "../types/activity";
 
 const RECONNECT_DELAY = 2000;
 
+// Number of positions kept per activity, current one included.
+const TRAIL_LENGTH = 5;
+
+// A snapshot replaces positions, so trails start over.
+function trackSnapshot(activities: Activity[]) {
+    return new Map(
+        activities.map((a): [string, TrackedActivity] => [
+            a.id,
+            { ...a, trail: [[a.latitude, a.longitude]] },
+        ])
+    );
+}
+
 function applyUpdates(
-    current: Map<string, Activity>,
+    current: Map<string, TrackedActivity>,
     updates: ActivityUpdate[]
 ) {
     const next = new Map(current);
@@ -29,7 +44,26 @@ function applyUpdates(
             continue;
         }
 
-        next.set(update.id, { ...activity, ...update });
+        const updated = { ...activity, ...update };
+
+        // Keep the trail reference when the position
+        // didn't change, so the trail isn't redrawn.
+        if (
+            update.latitude !== undefined ||
+            update.longitude !== undefined
+        ) {
+            const position: ActivityPosition = [
+                updated.latitude,
+                updated.longitude,
+            ];
+
+            updated.trail = [
+                ...activity.trail,
+                position,
+            ].slice(-TRAIL_LENGTH);
+        }
+
+        next.set(update.id, updated);
     }
 
     return next;
@@ -47,7 +81,7 @@ export function useActivityStream(url: string) {
     const [connected, setConnected] = useState(false);
     const [streaming, setStreaming] = useState(false);
     const [activities, setActivities] = useState(
-        () => new Map<string, Activity>()
+        () => new Map<string, TrackedActivity>()
     );
     const [updatesPerSecond, setUpdatesPerSecond] =
         useState(0);
@@ -84,12 +118,7 @@ export function useActivityStream(url: string) {
 
                 if (message.type === "snapshot") {
                     setActivities(
-                        new Map(
-                            message.activities.map(a => [
-                                a.id,
-                                a,
-                            ])
-                        )
+                        trackSnapshot(message.activities)
                     );
                 } else {
                     updateCountRef.current +=

@@ -8,10 +8,11 @@ import "leaflet/dist/leaflet.css";
 import type {
     Activity,
     ActivityType,
+    TrackedActivity,
 } from "../types/activity";
 
 type Props = {
-    activities: Activity[];
+    activities: TrackedActivity[];
     selectedId?: string;
     onSelect?: (id: string) => void;
     following?: boolean;
@@ -34,6 +35,24 @@ const TYPE_COLORS: Record<ActivityType, string> = {
 };
 
 const INACTIVE_COLOR = "#9e9e9e";
+
+// Own pane below the markers (overlayPane is 400),
+// paths in a shared pane stack in the order they're added.
+const TRAIL_PANE = "trail";
+const TRAIL_PANE_Z_INDEX = "350";
+
+// Segment styles from the newest to the oldest.
+const TRAIL_STYLES: L.PolylineOptions[] = [
+    { color: "#424242", opacity: 0.9 },
+    { color: "#757575", opacity: 0.7 },
+    { color: "#9e9e9e", opacity: 0.5 },
+    { color: "#bdbdbd", opacity: 0.3 },
+].map(style => ({
+    ...style,
+    weight: 3,
+    interactive: false,
+    pane: TRAIL_PANE,
+}));
 
 function markerStyle(
     activity: Activity,
@@ -66,6 +85,7 @@ export function Map({
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const layerRef = useRef<L.LayerGroup | null>(null);
+    const trailLayerRef = useRef<L.LayerGroup | null>(null);
 
     // `Map` is shadowed by this component, hence globalThis.
     const markersRef = useRef(
@@ -96,6 +116,7 @@ export function Map({
         : undefined;
     const selectedLatitude = selected?.latitude;
     const selectedLongitude = selected?.longitude;
+    const selectedTrail = selected?.trail;
 
     // Create the Leaflet map once.
     useEffect(() => {
@@ -119,6 +140,10 @@ export function Map({
             }
         ).addTo(map);
 
+        map.createPane(TRAIL_PANE).style.zIndex =
+            TRAIL_PANE_Z_INDEX;
+
+        const trailLayer = L.layerGroup().addTo(map);
         const layer = L.layerGroup().addTo(map);
 
         // Fires only for user drags, so zooming keeps following.
@@ -129,6 +154,7 @@ export function Map({
 
         mapRef.current = map;
         layerRef.current = layer;
+        trailLayerRef.current = trailLayer;
 
         // Leaflet doesn't notice size changes of its container.
         const resizeObserver = new ResizeObserver(() =>
@@ -144,6 +170,7 @@ export function Map({
             markers.clear();
             mapRef.current = null;
             layerRef.current = null;
+            trailLayerRef.current = null;
         };
     }, []);
 
@@ -203,6 +230,29 @@ export function Map({
             }
         }
     }, [activities, selectedId]);
+
+    // Draw the trail of the selected activity, one polyline
+    // per segment, since a polyline has a single style.
+    useEffect(() => {
+        const trailLayer = trailLayerRef.current;
+
+        if (!trailLayer) {
+            return;
+        }
+
+        trailLayer.clearLayers();
+
+        if (!selectedTrail) {
+            return;
+        }
+
+        for (let i = 1; i < selectedTrail.length; i++) {
+            L.polyline(
+                [selectedTrail[i - 1], selectedTrail[i]],
+                TRAIL_STYLES[selectedTrail.length - 1 - i]
+            ).addTo(trailLayer);
+        }
+    }, [selectedTrail]);
 
     // Fly to the selected activity when following starts.
     useEffect(() => {
