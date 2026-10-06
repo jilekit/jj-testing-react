@@ -1,4 +1,9 @@
-import { useMemo, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
 
 import { Box, Button } from "@mui/material";
 
@@ -22,6 +27,43 @@ export default function App() {
     } = useActivityStream(WS_URL);
 
     const [selectedId, setSelectedId] = useState<string>();
+    const [following, setFollowing] = useState(false);
+
+    // Selecting the selected activity again deselects it.
+    const select = useCallback((id: string) => {
+        setSelectedId(current =>
+            current === id ? undefined : id
+        );
+        setFollowing(false);
+    }, []);
+
+    const clearSelection = useCallback(() => {
+        setSelectedId(undefined);
+        setFollowing(false);
+    }, []);
+
+    const toggleFollowing = useCallback(
+        () => setFollowing(current => !current),
+        []
+    );
+
+    const stopFollowing = useCallback(
+        () => setFollowing(false),
+        []
+    );
+
+    useEffect(() => {
+        function onKeyDown(event: KeyboardEvent) {
+            if (event.key === "Escape") {
+                clearSelection();
+            }
+        }
+
+        window.addEventListener("keydown", onKeyDown);
+
+        return () =>
+            window.removeEventListener("keydown", onKeyDown);
+    }, [clearSelection]);
 
     const activityList = useMemo(
         () => Array.from(activities.values()),
@@ -55,7 +97,9 @@ export default function App() {
                     <Map
                         activities={activityList}
                         selectedId={selectedId}
-                        onSelect={setSelectedId}
+                        onSelect={select}
+                        following={following}
+                        onFollowStop={stopFollowing}
                     />
                 </section>
 
@@ -68,7 +112,7 @@ export default function App() {
                         <ActivityList
                             activities={activityList}
                             selectedId={selectedId}
-                            onSelect={setSelectedId}
+                            onSelect={select}
                         />
                     </div>
 
@@ -80,6 +124,9 @@ export default function App() {
                     >
                         <ActivityDetail
                             activity={selectedActivity}
+                            following={following}
+                            onClose={clearSelection}
+                            onToggleFollow={toggleFollowing}
                         />
                     </Box>
                 </aside>
