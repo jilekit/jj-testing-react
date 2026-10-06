@@ -8,6 +8,7 @@ import {
 import type {
     Activity,
     ActivityPosition,
+    ActivityType,
     ActivityUpdate,
     ClientMessage,
     ServerMessage,
@@ -26,6 +27,38 @@ function trackSnapshot(activities: Activity[]) {
             a.id,
             { ...a, trail: [[a.latitude, a.longitude]] },
         ])
+    );
+}
+
+// A filter change doesn't move activities, so activities
+// which stay keep their trails.
+function mergeSnapshot(
+    current: Map<string, TrackedActivity>,
+    activities: Activity[]
+) {
+    return new Map(
+        activities.map((a): [string, TrackedActivity] => {
+            const position: ActivityPosition = [
+                a.latitude,
+                a.longitude,
+            ];
+            const trail = current.get(a.id)?.trail ?? [];
+            const last = trail[trail.length - 1];
+            const moved =
+                !last ||
+                last[0] !== position[0] ||
+                last[1] !== position[1];
+
+            return [
+                a.id,
+                {
+                    ...a,
+                    trail: moved
+                        ? [...trail, position].slice(-TRAIL_LENGTH)
+                        : trail,
+                },
+            ];
+        })
     );
 }
 
@@ -76,10 +109,20 @@ export function useActivityStream(url: string) {
     // so a reconnect can resubscribe automatically.
     const streamingRef = useRef(false);
 
+    // Same for the activity type filter.
+    // undefined = all types.
+    const activityTypesRef = useRef<ActivityType[]>(undefined);
+
+    // Set when (re)starting the stream, where positions may
+    // have jumped. A filter change keeps the trails.
+    const resetTrailsRef = useRef(false);
+
     const updateCountRef = useRef(0);
 
     const [connected, setConnected] = useState(false);
     const [streaming, setStreaming] = useState(false);
+    const [activityTypes, setActivityTypesState] =
+        useState<ActivityType[]>();
     const [activities, setActivities] = useState(
         () => new Map<string, TrackedActivity>()
     );
@@ -94,6 +137,16 @@ export function useActivityStream(url: string) {
         }
     }, []);
 
+    const subscribe = useCallback(() => {
+        const activityTypes = activityTypesRef.current;
+
+        send(
+            activityTypes
+                ? { type: "subscribe", activityTypes }
+                : { type: "subscribe" }
+        );
+    }, [send]);
+
     useEffect(() => {
         let disposed = false;
         let reconnectTimer: number | undefined;
@@ -107,7 +160,8 @@ export function useActivityStream(url: string) {
                 setConnected(true);
 
                 if (streamingRef.current) {
-                    send({ type: "subscribe" });
+                    resetTrailsRef.current = true;
+                    subscribe();
                 }
             };
 
@@ -117,8 +171,17 @@ export function useActivityStream(url: string) {
                 );
 
                 if (message.type === "snapshot") {
-                    setActivities(
-                        trackSnapshot(message.activities)
+                    const resetTrails = resetTrailsRef.current;
+
+                    resetTrailsRef.current = false;
+
+                    setActivities(current =>
+                        resetTrails
+                            ? trackSnapshot(message.activities)
+                            : mergeSnapshot(
+                                current,
+                                message.activities
+                            )
                     );
                 } else {
                     updateCountRef.current +=
@@ -159,7 +222,7 @@ export function useActivityStream(url: string) {
             socketRef.current?.close();
             socketRef.current = null;
         };
-    }, [url, send]);
+    }, [url, subscribe]);
 
     const toggleStreaming = useCallback(() => {
         const next = !streamingRef.current;
@@ -167,10 +230,27 @@ export function useActivityStream(url: string) {
         streamingRef.current = next;
         setStreaming(next);
 
-        send({
-            type: next ? "subscribe" : "unsubscribe",
-        });
-    }, [send]);
+        if (next) {
+            resetTrailsRef.current = true;
+            subscribe();
+        } else {
+            send({ type: "unsubscribe" });
+        }
+    }, [send, subscribe]);
+
+    // While stopped, the filter is only stored
+    // and sent with the next subscribe.
+    const setActivityTypes = useCallback(
+        (types: ActivityType[] | undefined) => {
+            activityTypesRef.current = types;
+            setActivityTypesState(types);
+
+            if (streamingRef.current) {
+                subscribe();
+            }
+        },
+        [subscribe]
+    );
 
     return {
         connected,
@@ -178,5 +258,7 @@ export function useActivityStream(url: string) {
         activities,
         updatesPerSecond,
         toggleStreaming,
+        activityTypes,
+        setActivityTypes,
     };
 }

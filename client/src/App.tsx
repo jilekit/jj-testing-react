@@ -9,6 +9,7 @@ import { Box, Button } from "@mui/material";
 
 import { ActivityDetail } from "./components/ActivityDetail";
 import { ActivityList } from "./components/ActivityList";
+import { ActivityTypeFilter } from "./components/ActivityTypeFilter";
 import { Map } from "./components/Map";
 import { StatusBar } from "./components/StatusBar";
 import { useActivityStream } from "./hooks/useActivityStream";
@@ -24,6 +25,8 @@ export default function App() {
         activities,
         updatesPerSecond,
         toggleStreaming,
+        activityTypes,
+        setActivityTypes,
     } = useActivityStream(WS_URL);
 
     const [selectedId, setSelectedId] = useState<string>();
@@ -64,6 +67,14 @@ export default function App() {
         return () =>
             window.removeEventListener("keydown", onKeyDown);
     }, [clearSelection]);
+
+    // The selected activity is gone after its type
+    // was filtered out.
+    useEffect(() => {
+        if (selectedId && !activities.has(selectedId)) {
+            clearSelection();
+        }
+    }, [activities, selectedId, clearSelection]);
 
     const activityList = useMemo(
         () => Array.from(activities.values()),
@@ -106,6 +117,11 @@ export default function App() {
                 <aside className="sidebar">
                     <div className="sidebarHeader">
                         Activities ({activities.size})
+
+                        <ActivityTypeFilter
+                            value={activityTypes}
+                            onChange={setActivityTypes}
+                        />
                     </div>
 
                     <div className="activityList">

@@ -1,4 +1,7 @@
-export type ActivityType = "DRONE" | "ADSB" | "OTHER";
+// Mirrors ACTIVITY_TYPES in server/src/server.ts.
+export const ACTIVITY_TYPES = ["DRONE", "ADSB", "OTHER"] as const;
+
+export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 export type Activity = {
     id: string;
@@ -48,6 +51,13 @@ export type ServerMessage =
     | SnapshotMessage
     | UpdateMessage;
 
+export type SubscribeMessage = {
+    type: "subscribe";
+
+    // Omitted = all activity types, otherwise non-empty.
+    activityTypes?: ActivityType[];
+};
+
 export type ClientMessage =
-    | { type: "subscribe" }
+    | SubscribeMessage
     | { type: "unsubscribe" };
