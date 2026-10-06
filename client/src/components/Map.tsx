@@ -14,11 +14,18 @@ type Props = {
     activities: Activity[];
     selectedId?: string;
     onSelect?: (id: string) => void;
+    following?: boolean;
+    onFollowStop?: () => void;
 };
 
 // Roughly around Brno, where the server generates activities.
 const INITIAL_CENTER: L.LatLngExpression = [49.2, 16.6];
 const INITIAL_ZOOM = 11;
+
+// Minimum zoom when centering the selected activity.
+const SELECTED_ZOOM = 14;
+
+const FIT_PADDING: L.PointExpression = [32, 32];
 
 const TYPE_COLORS: Record<ActivityType, string> = {
     DRONE: "#d32f2f",
@@ -53,6 +60,8 @@ export function Map({
                         activities,
                         selectedId,
                         onSelect,
+                        following = false,
+                        onFollowStop,
                     }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
@@ -67,6 +76,26 @@ export function Map({
     // the latest callback from a ref.
     const onSelectRef = useRef(onSelect);
     onSelectRef.current = onSelect;
+
+    const onFollowStopRef = useRef(onFollowStop);
+    onFollowStopRef.current = onFollowStop;
+
+    // Read by effects which must not rerun on every update.
+    const activitiesRef = useRef(activities);
+    activitiesRef.current = activities;
+
+    // Distinguishes a cleared selection from no selection yet.
+    const previousSelectedIdRef = useRef<string>(undefined);
+
+    // Following is paused while flying to the activity,
+    // otherwise panning would cancel the animation.
+    const flyingRef = useRef(false);
+
+    const selected = selectedId
+        ? activities.find(a => a.id === selectedId)
+        : undefined;
+    const selectedLatitude = selected?.latitude;
+    const selectedLongitude = selected?.longitude;
 
     // Create the Leaflet map once.
     useEffect(() => {
@@ -91,6 +120,12 @@ export function Map({
         ).addTo(map);
 
         const layer = L.layerGroup().addTo(map);
+
+        // Fires only for user drags, so zooming keeps following.
+        map.on("dragstart", () => {
+            flyingRef.current = false;
+            onFollowStopRef.current?.();
+        });
 
         mapRef.current = map;
         layerRef.current = layer;
@@ -168,6 +203,77 @@ export function Map({
             }
         }
     }, [activities, selectedId]);
+
+    // Fly to the selected activity when following starts.
+    useEffect(() => {
+        const map = mapRef.current;
+
+        if (!map || !following || !selectedId) {
+            return;
+        }
+
+        const activity = activitiesRef.current.find(
+            a => a.id === selectedId
+        );
+
+        if (!activity) {
+            return;
+        }
+
+        flyingRef.current = true;
+        map.once("moveend", () => {
+            flyingRef.current = false;
+        });
+
+        map.flyTo(
+            [activity.latitude, activity.longitude],
+            Math.max(map.getZoom(), SELECTED_ZOOM)
+        );
+    }, [following, selectedId]);
+
+    // Keep the followed activity centered as it moves.
+    useEffect(() => {
+        const map = mapRef.current;
+
+        if (
+            !map ||
+            !following ||
+            flyingRef.current ||
+            selectedLatitude === undefined ||
+            selectedLongitude === undefined
+        ) {
+            return;
+        }
+
+        map.panTo([selectedLatitude, selectedLongitude], {
+            animate: false,
+        });
+    }, [following, selectedLatitude, selectedLongitude]);
+
+    // Fit all activities when the selection is cleared.
+    useEffect(() => {
+        const map = mapRef.current;
+        const previousSelectedId = previousSelectedIdRef.current;
+
+        previousSelectedIdRef.current = selectedId;
+
+        if (!map || selectedId || !previousSelectedId) {
+            return;
+        }
+
+        const bounds = L.latLngBounds(
+            activitiesRef.current.map(
+                (a): L.LatLngTuple => [a.latitude, a.longitude]
+            )
+        );
+
+        if (bounds.isValid()) {
+            map.flyToBounds(bounds, {
+                padding: FIT_PADDING,
+                maxZoom: SELECTED_ZOOM,
+            });
+        }
+    }, [selectedId]);
 
     return (
         <Box
