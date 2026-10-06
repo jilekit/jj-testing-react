@@ -5,9 +5,9 @@ import { Box } from "@mui/material";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+import { TYPE_COLORS } from "../constants/activityTypes";
 import type {
     Activity,
-    ActivityType,
     TrackedActivity,
 } from "../types/activity";
 
@@ -27,12 +27,6 @@ const INITIAL_ZOOM = 11;
 const SELECTED_ZOOM = 14;
 
 const FIT_PADDING: L.PointExpression = [32, 32];
-
-const TYPE_COLORS: Record<ActivityType, string> = {
-    DRONE: "#d32f2f",
-    ADSB: "#ed6c02",
-    OTHER: "#9c27b0",
-};
 
 const INACTIVE_COLOR = "#9e9e9e";
 
